@@ -7,11 +7,14 @@ Local (só neste computador):
 Servidor (Easypanel, via Dockerfile):
     HOST=0.0.0.0 PORT=8000 APP_PASSWORD=... META_ACCESS_TOKEN=... python interface.py
 
+Os tokens (um por BM) são cadastrados pela própria página e guardados em
+DATA_DIR/tokens.json. Cada conta de anúncio usa o primeiro token que consegue criar nela.
+
 Variáveis de ambiente:
-    META_ACCESS_TOKEN, META_ACCESS_TOKEN_<NOME>   um token por BM; cada conta de anúncio
-                                                  usa o primeiro token que consegue criar nela
     APP_PASSWORD   senha da página (obrigatória quando HOST não é o localhost)
+    DATA_DIR       pasta onde os tokens ficam salvos (padrão: ./dados)
     HOST, PORT     endereço do servidor (padrão: 127.0.0.1, porta livre a partir de 8765)
+    META_ACCESS_TOKEN, META_ACCESS_TOKEN_<NOME>   opcionais; somam aos tokens da página
 """
 
 import json
@@ -37,10 +40,11 @@ PORTA = os.environ.get("PORT")
 SENHA = os.environ.get("APP_PASSWORD", "")
 MODO_SERVIDOR = HOST not in HOSTS_LOCAIS
 DURACAO_SESSAO = 12 * 3600
+PASTA_DADOS = Path(os.environ.get("DATA_DIR") or motor.PASTA / "dados")
+ARQUIVO_TOKENS = PASTA_DADOS / "tokens.json"
 
 trava = threading.Lock()
 sessoes = {}                 # id da sessão -> horário em que expira
-token_manual = ""            # token colado na página (só no modo local)
 token_por_conta = {}         # conta de anúncio -> token que tem acesso a ela
 contas_ig_validas = {}       # conta de anúncio -> {id do IG: username}
 cache_existentes = {}        # conta de anúncio -> nomes de públicos que já existem
@@ -57,13 +61,36 @@ class ErroUsuario(Exception):
 # Tokens
 # ---------------------------------------------------------------------------
 
-def tokens_configurados():
+def tokens_salvos():
+    try:
+        return json.loads(ARQUIVO_TOKENS.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ValueError):
+        return []
+
+
+def gravar_tokens(lista):
+    try:
+        PASTA_DADOS.mkdir(parents=True, exist_ok=True)
+        temporario = ARQUIVO_TOKENS.with_suffix(".tmp")
+        temporario.write_text(json.dumps(lista, ensure_ascii=False, indent=1), encoding="utf-8")
+        temporario.replace(ARQUIVO_TOKENS)
+    except OSError as erro:
+        raise ErroUsuario(f"Não consegui salvar os tokens no servidor ({erro}).", 500)
+    token_por_conta.clear()
+    cache_existentes.clear()
+
+
+def tokens_do_ambiente():
     variaveis = {**motor.ler_env(), **os.environ}
-    tokens = [token_manual] + [
-        valor.strip() for chave, valor in sorted(variaveis.items())
+    return [
+        (chave, valor.strip()) for chave, valor in sorted(variaveis.items())
         if chave.startswith("META_ACCESS_TOKEN") and valor.strip()
     ]
-    return list(dict.fromkeys(t for t in tokens if t))
+
+
+def tokens_configurados():
+    tokens = [t["token"] for t in tokens_salvos()] + [v for _, v in tokens_do_ambiente()]
+    return list(dict.fromkeys(tokens))
 
 
 def token_da_conta(conta):
@@ -124,19 +151,52 @@ def existentes(conta, atualizar=False):
 # Rotas da API
 # ---------------------------------------------------------------------------
 
-def api_token(dados):
-    global token_manual
-    if MODO_SERVIDOR:
-        raise ErroUsuario("No servidor, os tokens ficam nas variáveis de ambiente do Easypanel.")
+def api_tokens(_=None):
+    """Lista os tokens sem nunca devolver o token em si — só nome e final."""
+    lista = [
+        {"id": t["id"], "nome": t["nome"], "usuario": t.get("usuario", ""),
+         "final": t["token"][-4:], "origem": "pagina"}
+        for t in tokens_salvos()
+    ]
+    lista += [
+        {"id": "", "nome": chave, "usuario": "", "final": valor[-4:], "origem": "ambiente"}
+        for chave, valor in tokens_do_ambiente()
+    ]
+    return {"tokens": lista}
+
+
+def api_token_adicionar(dados):
+    nome = str(dados.get("nome") or "").strip()[:60]
     token = str(dados.get("token") or "").strip()
+    if not nome:
+        raise ErroUsuario("Dê um nome para o token (ex.: o nome da BM).")
     if not token:
         raise ErroUsuario("Cole o token de acesso.")
-    token_manual = token
-    token_por_conta.clear()
-    cache_existentes.clear()
-    if dados.get("salvar"):
-        motor.ARQUIVO_ENV.write_text(f"META_ACCESS_TOKEN={token}\n", encoding="utf-8")
-    return {"ok": True}
+    if token in tokens_configurados():
+        raise ErroUsuario("Esse token já está cadastrado.")
+
+    motor.usar_token(token)
+    eu = motor.graph_get("me", fields="name")
+    if "error" in eu:
+        raise ErroUsuario("A Meta recusou esse token.\n" + motor.explicar_erro(eu["error"]))
+
+    with trava:
+        lista = tokens_salvos()
+        lista.append({"id": secrets.token_hex(6), "nome": nome, "token": token,
+                      "usuario": eu.get("name", "")})
+        gravar_tokens(lista)
+    return api_tokens()
+
+
+def api_token_remover(dados):
+    id_token = str(dados.get("id") or "")
+    with trava:
+        lista = tokens_salvos()
+        restantes = [t for t in lista if t["id"] != id_token]
+        if len(restantes) == len(lista):
+            raise ErroUsuario("Token não encontrado.", 404)
+        gravar_tokens(restantes)
+    return api_tokens()
 
 
 def api_buscar(dados):
@@ -265,9 +325,10 @@ def api_progresso(params):
         return {k: v for k, v in json.loads(json.dumps(tarefa)).items() if not k.startswith("_")}
 
 
-ROTAS_GET = {"/api/progresso": api_progresso}
+ROTAS_GET = {"/api/progresso": api_progresso, "/api/tokens": api_tokens}
 ROTAS_POST = {
-    "/api/token": api_token,
+    "/api/tokens/adicionar": api_token_adicionar,
+    "/api/tokens/remover": api_token_remover,
     "/api/buscar": api_buscar,
     "/api/previa": api_previa,
     "/api/criar": api_criar,

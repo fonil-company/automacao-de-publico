@@ -27,19 +27,12 @@ O token fica salvo só no computador, no arquivo `.env`, que não vai para o Git
 
 1. No Easypanel, crie um serviço **App** e, em **Source**, aponte para este repositório do GitHub (branch `main`).
 2. Em **Build**, escolha **Dockerfile** (o arquivo já está na raiz).
-3. Em **Environment**, cadastre:
+3. Em **Environment**, cadastre `APP_PASSWORD`: a senha que o time digita para entrar na página. Sem ela o site não inicia.
+4. Em **Mounts**, adicione um **Volume** com o caminho de montagem `/app/dados`. É onde os tokens ficam salvos; sem o volume, eles somem a cada deploy.
+5. Em **Domains**, crie o domínio apontando para a porta **8000** e ative HTTPS.
+6. Clique em **Deploy**.
 
-   | Variável | O que é |
-   |---|---|
-   | `APP_PASSWORD` | Senha que o time digita para entrar na página. Obrigatória. |
-   | `META_ACCESS_TOKEN` | Token do usuário do sistema de uma BM. |
-   | `META_ACCESS_TOKEN_<NOME>` | Tokens de outras BMs, se houver (ex.: `META_ACCESS_TOKEN_BM2`). |
-
-   Com vários tokens, a página usa sozinha o que tiver permissão na conta de anúncio digitada.
-4. Em **Domains**, crie o domínio apontando para a porta **8000** e ative HTTPS.
-5. Clique em **Deploy**.
-
-No site, os tokens não aparecem nem podem ser trocados pela página, apenas pelas variáveis de ambiente. O relatório de cada criação é baixado em CSV no fim do processo.
+Os tokens são cadastrados pela própria página, no link **Tokens das BMs**: um por BM, com um nome para identificar. O site testa o token na Meta antes de salvar, nunca mostra o token de volta e, na hora de criar, usa sozinho o que tem permissão na conta de anúncio digitada. O relatório de cada criação é baixado em CSV no fim do processo.
 
 ## Uso pelo terminal (opcional)
 

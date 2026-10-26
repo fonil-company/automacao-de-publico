@@ -1,5 +1,6 @@
-# Token de acesso — nunca subir
+# Tokens de acesso — nunca subir
 .env
+dados/
 
 # Relatórios com dados dos clientes
 relatorios/

@@ -84,6 +84,11 @@
   .conta-ig .user { font-weight: 700; }
   .conta-ig .nums { color: var(--suave); font-size: 13px; }
   .conta-ig .bio { font-size: 13px; color: var(--suave); margin-top: 4px; overflow-wrap: anywhere; }
+  .token-item {
+    display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+    border: 1px solid var(--borda); border-radius: 12px; padding: 12px 14px;
+  }
+  .token-item .nums { color: var(--suave); font-size: 13px; }
   .selo { font-size: 11px; font-weight: 700; background: var(--verde-claro); color: var(--verde); padding: 2px 8px; border-radius: 99px; margin-left: 6px; }
 
   /* Configuração */
@@ -138,7 +143,7 @@
       <p>Cria os públicos personalizados no Meta Ads em poucos cliques.</p>
     </div>
     <div style="display:flex;gap:16px">
-      <button class="link" id="trocarToken" hidden>Trocar token</button>
+      <button class="link" id="trocarToken" hidden>Tokens das BMs</button>
       <button class="link" id="sair" hidden>Sair</button>
     </div>
   </header>
@@ -156,18 +161,18 @@
 
   <div class="alerta erro" id="erroGeral" hidden></div>
 
-  <!-- Token -->
-  <section class="passo" id="secToken" hidden>
-    <h2><span class="num">🔑</span> Token de acesso</h2>
-    <p class="ajuda">Cole o token do Meta com permissão <b>ads_management</b>. Ele fica só neste computador.</p>
-    <div class="linha">
-      <input type="password" id="token" placeholder="EAAB..." autocomplete="off">
-      <button class="botao" id="btnToken">Salvar token</button>
-    </div>
-    <label class="mini" style="display:flex;gap:6px;align-items:center;margin-top:10px">
-      <input type="checkbox" id="salvarToken" checked> Lembrar neste computador (salva no arquivo .env)
-    </label>
+  <!-- Tokens -->
+  <section class="passo" id="secTokens" hidden>
+    <h2><span class="num">🔑</span> Tokens das BMs</h2>
+    <p class="ajuda">Cadastre um token por BM (gerado em Usuários do sistema). Na hora de criar, o site usa sozinho o token que tem acesso à conta de anúncio. Depois de salvo, o token não aparece mais aqui.</p>
+    <div class="contas" id="listaTokens"></div>
+    <form class="linha" id="formToken" style="margin-top:14px">
+      <input type="text" id="nomeToken" placeholder="Nome da BM (ex.: BM FONIL 01)" maxlength="60" autocomplete="off">
+      <input type="password" id="token" placeholder="Token (EAA...)" autocomplete="off">
+      <button class="botao" id="btnToken" type="submit">Adicionar</button>
+    </form>
     <div class="alerta erro" id="erroToken" hidden></div>
+    <div style="margin-top:14px"><button class="botao secundario" id="btnFecharTokens" hidden>Concluir</button></div>
   </section>
 
   <!-- 1. Conta -->
@@ -284,7 +289,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const fmt = (n) => (n == null ? "?" : Number(n).toLocaleString("pt-BR"));
 
 const estado = { conta: "", contas: [], igId: "", janelas: new Set(JANELAS_PADRAO), previa: null };
-const SECOES = ["secLogin", "secToken", "secConta", "secIg", "secConfig", "secCriar", "secProgresso"];
+const SECOES = ["secLogin", "secTokens", "secConta", "secIg", "secConfig", "secCriar", "secProgresso"];
 let servidor = false;
 let tarefaId = null;
 
@@ -342,14 +347,9 @@ async function iniciar() {
 
   $("secLogin").hidden = true;
   $("sair").hidden = !status.precisa_login;
-  if (!status.token && servidor) {
-    mostrarErro("erroGeral", "Nenhum token configurado no servidor. Adicione META_ACCESS_TOKEN nas variáveis de ambiente do Easypanel.");
-    return;
-  }
-  $("secToken").hidden = status.token;
+  $("trocarToken").hidden = false;
   $("secConta").hidden = !status.token;
-  $("trocarToken").hidden = !status.token || servidor;
-  if (status.token) $("conta").focus(); else $("token").focus();
+  if (status.token) $("conta").focus(); else await abrirTokens();
 
   tarefaId = lembrar.ler();
   if (tarefaId) {
@@ -371,21 +371,59 @@ $("formLogin").onsubmit = async (e) => {
 };
 $("sair").onclick = async () => { await api("/api/sair", {}).catch(() => {}); location.reload(); };
 
-$("btnToken").onclick = async () => {
+/* ---------- Tokens das BMs ---------- */
+function desenharTokens(tokens) {
+  $("listaTokens").innerHTML = tokens.length
+    ? tokens.map((t) => `<div class="token-item">
+        <div>
+          <div class="user">${esc(t.nome)}</div>
+          <div class="nums">${t.usuario ? `Usuário do sistema: ${esc(t.usuario)} · ` : ""}termina em …${esc(t.final)}</div>
+        </div>
+        ${t.origem === "pagina"
+          ? `<button class="botao secundario remover" data-id="${esc(t.id)}" style="padding:6px 14px">Remover</button>`
+          : `<span class="tag cinza">variável do servidor</span>`}
+      </div>`).join("")
+    : `<p class="mini" style="margin:0">Nenhum token cadastrado ainda. Adicione o primeiro abaixo.</p>`;
+  $("btnFecharTokens").hidden = !tokens.length;
+  $("secConta").hidden = !tokens.length;
+  if (!tokens.length) ["secIg", "secConfig", "secCriar"].forEach((id) => ($(id).hidden = true));
+}
+
+async function abrirTokens() {
   mostrarErro("erroToken", null);
-  ocupado($("btnToken"), true, "Salvando…");
+  $("secTokens").hidden = false;
+  try { desenharTokens((await api("/api/tokens")).tokens); }
+  catch (e) { mostrarErro("erroToken", e); }
+  $("nomeToken").focus();
+}
+
+$("formToken").onsubmit = async (e) => {
+  e.preventDefault();
+  mostrarErro("erroToken", null);
+  ocupado($("btnToken"), true, "Testando…");
   try {
-    await api("/api/token", { token: $("token").value, salvar: $("salvarToken").checked });
-    $("token").value = "";
-    $("secToken").hidden = true;
-    $("secConta").hidden = false;
-    $("trocarToken").hidden = false;
-    $("conta").focus();
-  } catch (e) { mostrarErro("erroToken", e); }
+    const r = await api("/api/tokens/adicionar", { nome: $("nomeToken").value, token: $("token").value });
+    $("nomeToken").value = $("token").value = "";
+    desenharTokens(r.tokens);
+  } catch (err) { mostrarErro("erroToken", err); }
   ocupado($("btnToken"), false);
 };
-$("token").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnToken").click(); });
-$("trocarToken").onclick = () => { $("secToken").hidden = false; $("token").focus(); };
+
+$("listaTokens").onclick = async (e) => {
+  const botao = e.target.closest(".remover");
+  if (!botao) return;
+  if (botao.dataset.confirmar !== "1") {
+    botao.dataset.confirmar = "1";
+    botao.textContent = "Confirmar remoção";
+    botao.classList.remove("secundario");
+    return;
+  }
+  try { desenharTokens((await api("/api/tokens/remover", { id: botao.dataset.id })).tokens); }
+  catch (err) { mostrarErro("erroToken", err); }
+};
+
+$("trocarToken").onclick = () => { abrirTokens(); $("secTokens").scrollIntoView({ behavior: "smooth" }); };
+$("btnFecharTokens").onclick = () => { $("secTokens").hidden = true; $("conta").focus(); };
 
 /* ---------- 1. Buscar conta ---------- */
 $("formConta").onsubmit = async (e) => {
