@@ -1,36 +1,77 @@
 """
-Interface no navegador para criar públicos de engajamento do Instagram.
+Interface web para criar públicos de engajamento do Instagram.
 
-Uso:
-    py interface.py      (ou dois cliques em "Abrir interface.bat")
+Local (só neste computador):
+    py interface.py      (ou "Abrir interface.bat" / "Abrir interface.command")
 
-Abre uma página local (só neste computador) que usa o mesmo motor do
-criar_publicos_ig.py. Deixe a janela preta aberta enquanto usa a página.
+Servidor (Easypanel, via Dockerfile):
+    HOST=0.0.0.0 PORT=8000 APP_PASSWORD=... META_ACCESS_TOKEN=... python interface.py
+
+Variáveis de ambiente:
+    META_ACCESS_TOKEN, META_ACCESS_TOKEN_<NOME>   um token por BM; cada conta de anúncio
+                                                  usa o primeiro token que consegue criar nela
+    APP_PASSWORD   senha da página (obrigatória quando HOST não é o localhost)
+    HOST, PORT     endereço do servidor (padrão: 127.0.0.1, porta livre a partir de 8765)
 """
 
 import json
 import os
-import subprocess
+import secrets
 import sys
 import threading
 import time
 import webbrowser
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 import criar_publicos_ig as motor
 
-PORTA_INICIAL = 8765
 ARQUIVO_HTML = motor.PASTA / "interface.html"
-CABECALHO_APP = "publicos-ig"  # exigido nos POSTs para outros sites não conseguirem chamar a API local
+CABECALHO_APP = "publicos-ig"  # exigido nos POSTs para outros sites não conseguirem chamar a API
+HOSTS_LOCAIS = {"127.0.0.1", "localhost"}
+
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORTA = os.environ.get("PORT")
+SENHA = os.environ.get("APP_PASSWORD", "")
+MODO_SERVIDOR = HOST not in HOSTS_LOCAIS
+DURACAO_SESSAO = 12 * 3600
 
 trava = threading.Lock()
+sessoes = {}                 # id da sessão -> horário em que expira
+token_manual = ""            # token colado na página (só no modo local)
+token_por_conta = {}         # conta de anúncio -> token que tem acesso a ela
 contas_ig_validas = {}       # conta de anúncio -> {id do IG: username}
 cache_existentes = {}        # conta de anúncio -> nomes de públicos que já existem
-tarefa = {"ativa": False, "terminado": False}
+tarefas = {}                 # id da tarefa -> progresso da criação
 
 
 class ErroUsuario(Exception):
-    pass
+    def __init__(self, mensagem, status=400):
+        super().__init__(mensagem)
+        self.status = status
+
+
+# ---------------------------------------------------------------------------
+# Tokens
+# ---------------------------------------------------------------------------
+
+def tokens_configurados():
+    variaveis = {**motor.ler_env(), **os.environ}
+    tokens = [token_manual] + [
+        valor.strip() for chave, valor in sorted(variaveis.items())
+        if chave.startswith("META_ACCESS_TOKEN") and valor.strip()
+    ]
+    return list(dict.fromkeys(t for t in tokens if t))
+
+
+def token_da_conta(conta):
+    token = token_por_conta.get(conta)
+    if not token:
+        raise ErroUsuario("Busque a conta de anúncio de novo antes de continuar.")
+    motor.usar_token(token)
+    return token
 
 
 # ---------------------------------------------------------------------------
@@ -83,15 +124,15 @@ def existentes(conta, atualizar=False):
 # Rotas da API
 # ---------------------------------------------------------------------------
 
-def api_status(_):
-    return {"token": bool(motor.TOKEN), "env": motor.ARQUIVO_ENV.exists()}
-
-
 def api_token(dados):
+    global token_manual
+    if MODO_SERVIDOR:
+        raise ErroUsuario("No servidor, os tokens ficam nas variáveis de ambiente do Easypanel.")
     token = str(dados.get("token") or "").strip()
     if not token:
         raise ErroUsuario("Cole o token de acesso.")
-    motor.TOKEN = token
+    token_manual = token
+    token_por_conta.clear()
     cache_existentes.clear()
     if dados.get("salvar"):
         motor.ARQUIVO_ENV.write_text(f"META_ACCESS_TOKEN={token}\n", encoding="utf-8")
@@ -100,22 +141,40 @@ def api_token(dados):
 
 def api_buscar(dados):
     conta = normalizar_conta(dados.get("conta"))
-    contas_ig, erro = motor.listar_contas_ig(conta)
-    if erro:
+    candidatos = tokens_configurados()
+    if not candidatos:
+        raise ErroUsuario("Nenhum token de acesso configurado.")
+
+    primeiro_erro, achou_sem_permissao, escolhido = None, False, None
+    for token in candidatos:
+        motor.usar_token(token)
+        contas_ig, erro = motor.listar_contas_ig(conta)
+        if erro:
+            primeiro_erro = primeiro_erro or erro
+        elif not motor.pode_criar_na_conta(conta):
+            achou_sem_permissao = True
+        else:
+            escolhido = (token, contas_ig)
+            break
+
+    if not escolhido:
+        if achou_sem_permissao:
+            raise ErroUsuario(motor.AVISO_SEM_ACESSO)
         raise ErroUsuario(
-            "Não deu para acessar essa conta de anúncio com o token atual.\n"
-            + motor.explicar_erro(erro)
-            + "\nConfira o ID da conta e, se estiver certo, peça um token com "
-              "permissão ads_management para essa conta."
+            "Nenhum token configurado tem acesso a essa conta de anúncio.\n"
+            + motor.explicar_erro(primeiro_erro or {})
+            + "\nConfira o ID da conta e se ela está atribuída ao usuário do sistema da BM."
         )
-    if not motor.pode_criar_na_conta(conta):
-        raise ErroUsuario(motor.AVISO_SEM_ACESSO)
-    contas = motor.detalhes_contas_ig(contas_ig)
-    if not contas:
+
+    token, contas_ig = escolhido
+    motor.usar_token(token)
+    if not contas_ig:
         raise ErroUsuario(
             "Essa conta de anúncio não tem nenhum Instagram vinculado. Vincule o Instagram "
             "do cliente à conta de anúncio no Gerenciador de Negócios e tente de novo."
         )
+    contas = motor.detalhes_contas_ig(contas_ig)
+    token_por_conta[conta] = token
     contas_ig_validas[conta] = {c["id"]: c.get("username", "?") for c in contas}
     cache_existentes.pop(conta, None)
     return {"conta": conta, "contas": contas}
@@ -123,6 +182,7 @@ def api_buscar(dados):
 
 def api_previa(dados):
     conta, publicos = planejar(dados)
+    token_da_conta(conta)
     ja_existem = existentes(conta)
     for p in publicos:
         p["existe"] = p["nome"] in ja_existem
@@ -132,29 +192,34 @@ def api_previa(dados):
 
 def api_criar(dados):
     conta, publicos = planejar(dados)
+    token = token_da_conta(conta)
     ig_id = str(dados.get("ig_id") or "")
     if ig_id not in contas_ig_validas.get(conta, {}):
         raise ErroUsuario("Busque a conta de anúncio e escolha o Instagram antes de criar.")
 
     with trava:
-        if tarefa.get("ativa"):
-            raise ErroUsuario("Já existe uma criação em andamento. Aguarde terminar.")
+        if any(t["ativa"] and t["conta"] == conta for t in tarefas.values()):
+            raise ErroUsuario("Já existe uma criação em andamento para essa conta. Aguarde terminar.")
         novos = [p for p in publicos if p["nome"] not in existentes(conta, atualizar=True)]
         if not novos:
             raise ErroUsuario("Todos esses públicos já existem nessa conta. Nada a criar.")
-        tarefa.clear()
-        tarefa.update({
+        id_tarefa = secrets.token_hex(8)
+        tarefas[id_tarefa] = {
             "ativa": True, "terminado": False, "conta": conta,
             "ig": contas_ig_validas[conta][ig_id], "total": len(novos),
             "feitos": 0, "sucesso": 0, "erros": 0, "aguardando": 0,
-            "itens": [], "relatorio": "",
-        })
+            "itens": [], "relatorio": False, "_arquivo": "",
+        }
 
-    threading.Thread(target=executar, args=(conta, ig_id, novos), daemon=True).start()
-    return {"ok": True, "total": len(novos)}
+    threading.Thread(
+        target=executar, args=(id_tarefa, token, conta, ig_id, novos), daemon=True
+    ).start()
+    return {"id": id_tarefa, "total": len(novos)}
 
 
-def executar(conta, ig_id, novos):
+def executar(id_tarefa, token, conta, ig_id, novos):
+    motor.usar_token(token)
+    tarefa = tarefas[id_tarefa]
     linhas = []
 
     def ao_esperar(segundos):
@@ -178,34 +243,34 @@ def executar(conta, ig_id, novos):
                     linhas.append([p["nome"], p["tipo"], p["dias"], "erro", "", msg])
             time.sleep(0.5)
     finally:
-        relatorio = motor.salvar_relatorio(conta, linhas) if linhas else ""
+        arquivo = motor.salvar_relatorio(conta, linhas) if linhas else ""
         cache_existentes.pop(conta, None)
         with trava:
-            tarefa.update({"ativa": False, "terminado": True, "relatorio": str(relatorio)})
+            tarefa.update({
+                "ativa": False, "terminado": True,
+                "relatorio": bool(arquivo), "_arquivo": str(arquivo),
+            })
 
 
-def api_progresso(_):
+def buscar_tarefa(params):
+    tarefa = tarefas.get((params.get("id") or [""])[0])
+    if not tarefa:
+        raise ErroUsuario("Não encontrei essa criação (o servidor pode ter reiniciado).", 404)
+    return tarefa
+
+
+def api_progresso(params):
+    tarefa = buscar_tarefa(params)
     with trava:
-        return json.loads(json.dumps(tarefa))
+        return {k: v for k, v in json.loads(json.dumps(tarefa)).items() if not k.startswith("_")}
 
 
-def api_abrir_relatorios(_):
-    motor.PASTA_RELATORIOS.mkdir(exist_ok=True)
-    if sys.platform == "win32":
-        os.startfile(motor.PASTA_RELATORIOS)
-    else:
-        abridor = "open" if sys.platform == "darwin" else "xdg-open"
-        subprocess.run([abridor, str(motor.PASTA_RELATORIOS)], check=False)
-    return {"ok": True}
-
-
-ROTAS_GET = {"/api/status": api_status, "/api/progresso": api_progresso}
+ROTAS_GET = {"/api/progresso": api_progresso}
 ROTAS_POST = {
     "/api/token": api_token,
     "/api/buscar": api_buscar,
     "/api/previa": api_previa,
     "/api/criar": api_criar,
-    "/api/abrir-relatorios": api_abrir_relatorios,
 }
 
 
@@ -217,13 +282,16 @@ class Manipulador(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 
-    def responder(self, status, corpo, tipo="application/json; charset=utf-8"):
+    def responder(self, status, corpo, tipo="application/json; charset=utf-8", cabecalhos=None):
         if not isinstance(corpo, bytes):
             corpo = json.dumps(corpo, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", tipo)
         self.send_header("Content-Length", str(len(corpo)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Frame-Options", "DENY")
+        for chave, valor in (cabecalhos or {}).items():
+            self.send_header(chave, valor)
         self.end_headers()
         self.wfile.write(corpo)
 
@@ -231,40 +299,110 @@ class Manipulador(BaseHTTPRequestHandler):
         try:
             self.responder(200, funcao(dados))
         except ErroUsuario as erro:
-            self.responder(400, {"erro": str(erro)})
+            self.responder(erro.status, {"erro": str(erro)})
         except Exception as erro:  # noqa: BLE001 — mostrar qualquer falha na tela
             self.responder(500, {"erro": f"Erro inesperado: {erro}"})
 
+    # --- sessão -----------------------------------------------------------
+
+    def id_sessao(self):
+        cookie = SimpleCookie(self.headers.get("Cookie") or "")
+        return cookie["sessao"].value if "sessao" in cookie else ""
+
+    def logado(self):
+        if not SENHA:
+            return True
+        expira = sessoes.get(self.id_sessao())
+        return bool(expira and expira > time.time())
+
+    def cookie_sessao(self, valor, duracao):
+        seguro = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+        return f"sessao={valor}; Path=/; HttpOnly; SameSite=Strict; Max-Age={duracao}{seguro}"
+
+    def entrar(self, dados):
+        senha = str(dados.get("senha") or "")
+        if not SENHA or not secrets.compare_digest(senha.encode(), SENHA.encode()):
+            time.sleep(1)
+            self.responder(401, {"erro": "Senha incorreta."})
+            return
+        sessao = secrets.token_urlsafe(32)
+        sessoes[sessao] = time.time() + DURACAO_SESSAO
+        self.responder(200, {"ok": True},
+                       cabecalhos={"Set-Cookie": self.cookie_sessao(sessao, DURACAO_SESSAO)})
+
+    def sair(self):
+        sessoes.pop(self.id_sessao(), None)
+        self.responder(200, {"ok": True}, cabecalhos={"Set-Cookie": self.cookie_sessao("", 0)})
+
+    def status(self):
+        logado = self.logado()
+        self.responder(200, {
+            "servidor": MODO_SERVIDOR,
+            "precisa_login": bool(SENHA),
+            "logado": logado,
+            "token": logado and bool(tokens_configurados()),
+        })
+
+    # --- rotas ------------------------------------------------------------
+
     def do_GET(self):
-        caminho = self.path.split("?")[0]
+        partes = urlsplit(self.path)
+        caminho, params = partes.path, parse_qs(partes.query)
         if caminho == "/":
             self.responder(200, ARQUIVO_HTML.read_bytes(), "text/html; charset=utf-8")
+        elif caminho == "/api/status":
+            self.status()
+        elif not self.logado():
+            self.responder(401, {"erro": "Entre com a senha."})
+        elif caminho == "/api/relatorio":
+            self.baixar_relatorio(params)
         elif caminho in ROTAS_GET:
-            self.executar_rota(ROTAS_GET[caminho], {})
+            self.executar_rota(ROTAS_GET[caminho], params)
         else:
             self.responder(404, {"erro": "Não encontrado"})
 
     def do_POST(self):
-        caminho = self.path.split("?")[0]
+        caminho = urlsplit(self.path).path
         if self.headers.get("X-App") != CABECALHO_APP:
             self.responder(403, {"erro": "Acesso negado"})
             return
-        if caminho not in ROTAS_POST:
-            self.responder(404, {"erro": "Não encontrado"})
-            return
-        tamanho = int(self.headers.get("Content-Length") or 0)
+        tamanho = min(int(self.headers.get("Content-Length") or 0), 1_000_000)
         try:
             dados = json.loads(self.rfile.read(tamanho) or b"{}")
         except ValueError:
             self.responder(400, {"erro": "Dados inválidos"})
             return
-        self.executar_rota(ROTAS_POST[caminho], dados)
+
+        if caminho == "/api/login":
+            self.entrar(dados)
+        elif caminho == "/api/sair":
+            self.sair()
+        elif not self.logado():
+            self.responder(401, {"erro": "Sua sessão expirou. Entre de novo."})
+        elif caminho in ROTAS_POST:
+            self.executar_rota(ROTAS_POST[caminho], dados)
+        else:
+            self.responder(404, {"erro": "Não encontrado"})
+
+    def baixar_relatorio(self, params):
+        try:
+            arquivo = Path(buscar_tarefa(params)["_arquivo"])
+        except ErroUsuario as erro:
+            self.responder(erro.status, {"erro": str(erro)})
+            return
+        if not arquivo.is_file():
+            self.responder(404, {"erro": "Relatório não encontrado."})
+            return
+        self.responder(200, arquivo.read_bytes(), "text/csv; charset=utf-8",
+                       {"Content-Disposition": f'attachment; filename="{arquivo.name}"'})
 
 
 def iniciar_servidor():
-    for porta in range(PORTA_INICIAL, PORTA_INICIAL + 20):
+    if PORTA:
+        return ThreadingHTTPServer((HOST, int(PORTA)), Manipulador), int(PORTA)
+    for porta in range(8765, 8785):
         try:
-            return ThreadingHTTPServer(("127.0.0.1", porta), Manipulador), porta
+            return ThreadingHTTPServer((HOST, porta), Manipulador), porta
         except OSError:
             continue
     motor.encerrar("Não achei uma porta livre para abrir a interface.")
@@ -274,17 +412,26 @@ def main():
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 
-    motor.TOKEN = os.environ.get("META_ACCESS_TOKEN") or motor.ler_env().get("META_ACCESS_TOKEN", "")
+    if MODO_SERVIDOR and not SENHA:
+        motor.encerrar(
+            "Para rodar como site (HOST diferente de 127.0.0.1) é obrigatório definir APP_PASSWORD,\n"
+            "senão qualquer pessoa com o link conseguiria criar públicos nas contas."
+        )
+
     servidor, porta = iniciar_servidor()
-    url = f"http://127.0.0.1:{porta}/"
+    url = f"http://{'127.0.0.1' if not MODO_SERVIDOR else HOST}:{porta}/"
 
-    print("=" * 64)
-    print("  Interface de públicos do Instagram aberta no navegador")
-    print(f"  Endereço: {url}")
-    print("  Deixe esta janela aberta enquanto usa. Para fechar: Ctrl+C.")
-    print("=" * 64)
+    print("=" * 64, flush=True)
+    if MODO_SERVIDOR:
+        print(f"  Interface de públicos rodando em {HOST}:{porta}", flush=True)
+        print(f"  Tokens configurados: {len(tokens_configurados())}", flush=True)
+    else:
+        print("  Interface de públicos do Instagram aberta no navegador", flush=True)
+        print(f"  Endereço: {url}", flush=True)
+        print("  Deixe esta janela aberta enquanto usa. Para fechar: Ctrl+C.", flush=True)
+    print("=" * 64, flush=True)
 
-    if "--sem-navegador" not in sys.argv:
+    if not MODO_SERVIDOR and "--sem-navegador" not in sys.argv:
         webbrowser.open(url)
     try:
         servidor.serve_forever()

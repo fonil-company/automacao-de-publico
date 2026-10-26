@@ -137,8 +137,24 @@
       <h1>Públicos de engajamento do Instagram</h1>
       <p>Cria os públicos personalizados no Meta Ads em poucos cliques.</p>
     </div>
-    <button class="link" id="trocarToken" hidden>Trocar token</button>
+    <div style="display:flex;gap:16px">
+      <button class="link" id="trocarToken" hidden>Trocar token</button>
+      <button class="link" id="sair" hidden>Sair</button>
+    </div>
   </header>
+
+  <!-- Login -->
+  <section class="passo" id="secLogin" hidden>
+    <h2><span class="num">🔒</span> Entrar</h2>
+    <p class="ajuda">Digite a senha de acesso do time.</p>
+    <form class="linha" id="formLogin">
+      <input type="password" id="senha" placeholder="Senha" autocomplete="current-password">
+      <button class="botao" id="btnEntrar" type="submit">Entrar</button>
+    </form>
+    <div class="alerta erro" id="erroLogin" hidden></div>
+  </section>
+
+  <div class="alerta erro" id="erroGeral" hidden></div>
 
   <!-- Token -->
   <section class="passo" id="secToken" hidden>
@@ -254,7 +270,7 @@
       </div>
       <div class="acoes">
         <button class="botao" id="btnRepetir" hidden>Tentar de novo os que falharam</button>
-        <button class="botao secundario" id="btnRelatorios">Abrir pasta de relatórios</button>
+        <button class="botao secundario" id="btnRelatorios">Baixar relatório (CSV)</button>
         <button class="botao secundario" id="btnNova">Criar para outra conta</button>
       </div>
     </div>
@@ -268,6 +284,14 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const fmt = (n) => (n == null ? "?" : Number(n).toLocaleString("pt-BR"));
 
 const estado = { conta: "", contas: [], igId: "", janelas: new Set(JANELAS_PADRAO), previa: null };
+const SECOES = ["secLogin", "secToken", "secConta", "secIg", "secConfig", "secCriar", "secProgresso"];
+let servidor = false;
+let tarefaId = null;
+
+const lembrar = {
+  ler() { try { return localStorage.getItem("tarefaId"); } catch { return null; } },
+  gravar(id) { try { localStorage.setItem("tarefaId", id); } catch {} },
+};
 
 async function api(caminho, corpo) {
   const opcoes = corpo === undefined ? {} : {
@@ -277,10 +301,25 @@ async function api(caminho, corpo) {
   };
   let r;
   try { r = await fetch(caminho, opcoes); }
-  catch { throw new Error("A interface perdeu a conexão. Verifique se a janela preta ainda está aberta."); }
+  catch {
+    throw new Error(servidor
+      ? "Sem conexão com o servidor. Confira sua internet e tente de novo."
+      : "A interface perdeu a conexão. Verifique se a janela preta ainda está aberta.");
+  }
   const dados = await r.json().catch(() => ({}));
-  if (!r.ok || dados.erro) throw new Error(dados.erro || `Erro ${r.status}`);
+  if (r.status === 401 && caminho !== "/api/login") mostrarLogin();
+  if (!r.ok || dados.erro) {
+    const erro = new Error(dados.erro || `Erro ${r.status}`);
+    erro.status = r.status;
+    throw erro;
+  }
   return dados;
+}
+
+function mostrarLogin() {
+  SECOES.forEach((id) => ($(id).hidden = id !== "secLogin"));
+  $("trocarToken").hidden = $("sair").hidden = true;
+  $("senha").focus();
 }
 
 function mostrarErro(id, erro) {
@@ -295,17 +334,42 @@ function ocupado(botao, sim, textoOcupado) {
   botao.disabled = sim;
 }
 
-/* ---------- Token ---------- */
+/* ---------- Início, login e token ---------- */
 async function iniciar() {
   const status = await api("/api/status");
+  servidor = status.servidor;
+  if (status.precisa_login && !status.logado) { mostrarLogin(); return; }
+
+  $("secLogin").hidden = true;
+  $("sair").hidden = !status.precisa_login;
+  if (!status.token && servidor) {
+    mostrarErro("erroGeral", "Nenhum token configurado no servidor. Adicione META_ACCESS_TOKEN nas variáveis de ambiente do Easypanel.");
+    return;
+  }
   $("secToken").hidden = status.token;
   $("secConta").hidden = !status.token;
-  $("trocarToken").hidden = !status.token;
+  $("trocarToken").hidden = !status.token || servidor;
   if (status.token) $("conta").focus(); else $("token").focus();
 
-  const prog = await api("/api/progresso");
-  if (prog.ativa) { $("secProgresso").hidden = false; acompanhar(); }
+  tarefaId = lembrar.ler();
+  if (tarefaId) {
+    const prog = await api(`/api/progresso?id=${encodeURIComponent(tarefaId)}`).catch(() => null);
+    if (prog && prog.ativa) { $("secProgresso").hidden = false; travarFormulario(true); acompanhar(); }
+  }
 }
+
+$("formLogin").onsubmit = async (e) => {
+  e.preventDefault();
+  mostrarErro("erroLogin", null);
+  ocupado($("btnEntrar"), true, "Entrando…");
+  try {
+    await api("/api/login", { senha: $("senha").value });
+    $("senha").value = "";
+    await iniciar();
+  } catch (err) { mostrarErro("erroLogin", err); }
+  ocupado($("btnEntrar"), false);
+};
+$("sair").onclick = async () => { await api("/api/sair", {}).catch(() => {}); location.reload(); };
 
 $("btnToken").onclick = async () => {
   mostrarErro("erroToken", null);
@@ -461,7 +525,9 @@ $("btnConfirmar").onclick = async () => {
   mostrarErro("erroCriar", null);
   ocupado($("btnConfirmar"), true, "Iniciando…");
   try {
-    await api("/api/criar", configuracao());
+    const r = await api("/api/criar", configuracao());
+    tarefaId = r.id;
+    lembrar.gravar(r.id);
     $("confirmar").hidden = true;
     travarFormulario(true);
     $("secProgresso").hidden = false;
@@ -480,11 +546,21 @@ function travarFormulario(sim) {
 function acompanhar() {
   $("fim").hidden = true;
   $("tituloProgresso").textContent = "Criando públicos…";
-  $("subProgresso").textContent = "Pode deixar a página aberta. Não feche a janela preta.";
+  $("subProgresso").textContent = servidor
+    ? "Pode fechar ou atualizar a página: a criação continua no servidor."
+    : "Pode deixar a página aberta. Não feche a janela preta.";
   const passo = async () => {
     let t;
-    try { t = await api("/api/progresso"); }
-    catch { setTimeout(passo, 2000); return; }
+    try { t = await api(`/api/progresso?id=${encodeURIComponent(tarefaId)}`); }
+    catch (e) {
+      if (e.status === 404 || e.status === 401) {
+        $("subProgresso").textContent = e.message;
+        travarFormulario(false);
+        return;
+      }
+      setTimeout(passo, 2000);
+      return;
+    }
     $("pFeitos").textContent = t.feitos ?? 0;
     $("pTotal").textContent = t.total ?? 0;
     $("pOk").textContent = t.sucesso ?? 0;
@@ -505,6 +581,7 @@ function finalizar(t) {
   travarFormulario(false);
   $("fim").hidden = false;
   $("btnRepetir").hidden = !t.erros;
+  $("btnRelatorios").hidden = !t.relatorio;
   if (!t.erros) {
     $("tituloProgresso").textContent = `Pronto! ${t.sucesso} públicos criados ✓`;
     $("subProgresso").textContent = `Conta act_${t.conta} · Instagram @${t.ig}`;
@@ -519,7 +596,7 @@ $("btnRepetir").onclick = () => {
   $("secCriar").scrollIntoView({ behavior: "smooth" });
   atualizarPrevia();
 };
-$("btnRelatorios").onclick = () => api("/api/abrir-relatorios", {}).catch((e) => alert(e.message));
+$("btnRelatorios").onclick = () => { window.location.href = `/api/relatorio?id=${encodeURIComponent(tarefaId)}`; };
 $("btnNova").onclick = () => {
   ["secIg", "secConfig", "secCriar", "secProgresso"].forEach((id) => ($(id).hidden = true));
   $("conta").value = "";
@@ -533,10 +610,7 @@ $("btnNova").onclick = () => {
 };
 
 desenharJanelas();
-iniciar().catch((e) => {
-  document.querySelector("main").insertAdjacentHTML("beforeend",
-    `<div class="alerta erro">${esc(e.message)}</div>`);
-});
+iniciar().catch((e) => mostrarErro("erroGeral", e));
 </script>
 </body>
 </html>

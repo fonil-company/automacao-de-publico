@@ -23,6 +23,24 @@ Antes, o usuário do sistema precisa ter, com **acesso total**: o app (com o pro
 
 O token fica salvo só no computador, no arquivo `.env`, que não vai para o GitHub.
 
+## Publicar como site (Easypanel)
+
+1. No Easypanel, crie um serviço **App** e, em **Source**, aponte para este repositório do GitHub (branch `main`).
+2. Em **Build**, escolha **Dockerfile** (o arquivo já está na raiz).
+3. Em **Environment**, cadastre:
+
+   | Variável | O que é |
+   |---|---|
+   | `APP_PASSWORD` | Senha que o time digita para entrar na página. Obrigatória. |
+   | `META_ACCESS_TOKEN` | Token do usuário do sistema de uma BM. |
+   | `META_ACCESS_TOKEN_<NOME>` | Tokens de outras BMs, se houver (ex.: `META_ACCESS_TOKEN_BM2`). |
+
+   Com vários tokens, a página usa sozinha o que tiver permissão na conta de anúncio digitada.
+4. Em **Domains**, crie o domínio apontando para a porta **8000** e ative HTTPS.
+5. Clique em **Deploy**.
+
+No site, os tokens não aparecem nem podem ser trocados pela página, apenas pelas variáveis de ambiente. O relatório de cada criação é baixado em CSV no fim do processo.
+
 ## Uso pelo terminal (opcional)
 
 ```

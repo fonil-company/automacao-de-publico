@@ -17,6 +17,7 @@ import getpass
 import json
 import os
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -61,6 +62,16 @@ CODIGOS_LIMITE = {4, 17, 32, 613, 80003, 80004}
 ESPERAS_LIMITE = [30, 60, 120]
 
 TOKEN = ""
+_contexto = threading.local()
+
+
+def usar_token(token):
+    """Define o token das chamadas feitas nesta thread (a interface web atende várias BMs ao mesmo tempo)."""
+    _contexto.token = token
+
+
+def token_atual():
+    return getattr(_contexto, "token", None) or TOKEN
 
 
 # ---------------------------------------------------------------------------
@@ -149,12 +160,12 @@ def _requisicao(url, dados=None):
 
 
 def graph_get(caminho, **params):
-    params["access_token"] = TOKEN
+    params["access_token"] = token_atual()
     return _requisicao(f"{BASE_URL}/{caminho}?{urlencode(params)}")
 
 
 def graph_post(caminho, **params):
-    params["access_token"] = TOKEN
+    params["access_token"] = token_atual()
     return _requisicao(f"{BASE_URL}/{caminho}", params)
 
 
