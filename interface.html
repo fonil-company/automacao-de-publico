@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Públicos do Instagram</title>
+<style>
+  :root {
+    --fundo: #f4f5f7;
+    --cartao: #ffffff;
+    --texto: #1c1f24;
+    --suave: #626a75;
+    --borda: #e2e5ea;
+    --azul: #0a66ff;
+    --azul-claro: #e8f0ff;
+    --verde: #12805c;
+    --verde-claro: #e6f5ef;
+    --vermelho: #c4320a;
+    --vermelho-claro: #fdeee9;
+    --amarelo-claro: #fff6df;
+    --amarelo: #8a5a00;
+    --raio: 14px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--fundo); color: var(--texto);
+    font: 15px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+    padding: 32px 16px 64px;
+  }
+  main { max-width: 760px; margin: 0 auto; display: grid; gap: 18px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 24px; margin: 0; letter-spacing: -0.01em; }
+  header p { margin: 4px 0 0; color: var(--suave); }
+  .link { background: none; border: 0; color: var(--azul); cursor: pointer; font: inherit; padding: 0; text-decoration: underline; }
+
+  .passo {
+    background: var(--cartao); border: 1px solid var(--borda); border-radius: var(--raio);
+    padding: 22px 24px;
+  }
+  .passo h2 { margin: 0 0 4px; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+  .num {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--azul); color: #fff;
+    display: inline-grid; place-items: center; font-size: 13px; font-weight: 700; flex: none;
+  }
+  .ajuda { color: var(--suave); margin: 0 0 14px; font-size: 14px; }
+
+  label.campo { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  input[type=text], input[type=password], input[type=number] {
+    font: inherit; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 10px;
+    width: 100%; background: #fff; color: var(--texto);
+  }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+  .linha { display: flex; gap: 10px; flex-wrap: wrap; }
+  .linha > input { flex: 1 1 220px; }
+
+  button.botao {
+    font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 10px 18px;
+    background: var(--azul); color: #fff; cursor: pointer; white-space: nowrap;
+  }
+  button.botao:hover { filter: brightness(0.95); }
+  button.botao:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secundario { background: #eef0f3; color: var(--texto); }
+  button.grande { width: 100%; padding: 14px; font-size: 16px; }
+
+  .alerta { border-radius: 10px; padding: 12px 14px; margin-top: 12px; white-space: pre-line; font-size: 14px; }
+  .alerta.erro { background: var(--vermelho-claro); color: var(--vermelho); }
+  .alerta.aviso { background: var(--amarelo-claro); color: var(--amarelo); }
+  .alerta.ok { background: var(--verde-claro); color: var(--verde); }
+
+  /* Contas de Instagram */
+  .contas { display: grid; gap: 10px; }
+  .conta-ig {
+    display: flex; gap: 14px; align-items: flex-start; border: 2px solid var(--borda);
+    border-radius: 12px; padding: 14px; cursor: pointer; background: #fff;
+  }
+  .conta-ig:has(input:checked) { border-color: var(--azul); background: var(--azul-claro); }
+  .conta-ig input { margin-top: 14px; accent-color: var(--azul); width: 18px; height: 18px; flex: none; }
+  .foto {
+    width: 46px; height: 46px; border-radius: 50%; flex: none; object-fit: cover;
+    background: linear-gradient(135deg, #f9a03f, #d62976, #6a3cc9); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 18px;
+  }
+  .conta-ig .info { min-width: 0; }
+  .conta-ig .user { font-weight: 700; }
+  .conta-ig .nums { color: var(--suave); font-size: 13px; }
+  .conta-ig .bio { font-size: 13px; color: var(--suave); margin-top: 4px; overflow-wrap: anywhere; }
+  .selo { font-size: 11px; font-weight: 700; background: var(--verde-claro); color: var(--verde); padding: 2px 8px; border-radius: 99px; margin-left: 6px; }
+
+  /* Configuração */
+  .grade { display: grid; gap: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font: inherit; font-size: 14px; border: 1px solid var(--borda); background: #fff; color: var(--suave);
+    border-radius: 99px; padding: 6px 14px; cursor: pointer;
+  }
+  .chip[aria-pressed=true] { background: var(--azul); border-color: var(--azul); color: #fff; font-weight: 600; }
+  .chip.fixo { cursor: default; background: #eef0f3; color: var(--texto); border-color: transparent; }
+  .add-janela { display: inline-flex; gap: 6px; align-items: center; }
+  .add-janela input { width: 90px; padding: 6px 10px; border-radius: 99px; }
+  .mini { font-size: 13px; color: var(--suave); margin-top: 6px; }
+  details summary { cursor: pointer; color: var(--azul); font-size: 14px; font-weight: 600; }
+
+  /* Resumo */
+  .resumo-num { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+  .exemplos { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .exemplos li, .lista li { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; }
+  .lista { list-style: none; padding: 0; margin: 10px 0 0; max-height: 280px; overflow: auto; border: 1px solid var(--borda); border-radius: 10px; }
+  .lista li { padding: 6px 12px; border-bottom: 1px solid var(--borda); display: flex; justify-content: space-between; gap: 10px; }
+  .lista li:last-child { border-bottom: 0; }
+  .lista .existe { color: var(--suave); text-decoration: line-through; }
+  .tag { font-family: "Segoe UI", system-ui, sans-serif; font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 99px; white-space: nowrap; text-decoration: none; }
+  .tag.cinza { background: #eef0f3; color: var(--suave); }
+  .tag.verde { background: var(--verde-claro); color: var(--verde); }
+  .tag.vermelha { background: var(--vermelho-claro); color: var(--vermelho); }
+  .confirmar { border: 2px solid var(--azul); background: var(--azul-claro); border-radius: 12px; padding: 16px; margin-top: 14px; }
+  .confirmar p { margin: 0 0 12px; }
+
+  /* Progresso */
+  .barra { height: 12px; background: #eef0f3; border-radius: 99px; overflow: hidden; margin: 12px 0 8px; }
+  .barra > div { height: 100%; background: var(--azul); width: 0; transition: width .3s; }
+  .placar { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 6px; }
+  .placar div { font-size: 13px; color: var(--suave); }
+  .placar strong { display: block; font-size: 26px; color: var(--texto); }
+  .placar .v strong { color: var(--verde); }
+  .placar .e strong { color: var(--vermelho); }
+  .acoes { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .erro-item { color: var(--vermelho); font-family: "Segoe UI", system-ui, sans-serif; font-size: 12px; }
+  .lista li.com-erro { flex-direction: column; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Públicos de engajamento do Instagram</h1>
+      <p>Cria os públicos personalizados no Meta Ads em poucos cliques.</p>
+    </div>
+    <button class="link" id="trocarToken" hidden>Trocar token</button>
+  </header>
+
+  <!-- Token -->
+  <section class="passo" id="secToken" hidden>
+    <h2><span class="num">🔑</span> Token de acesso</h2>
+    <p class="ajuda">Cole o token do Meta com permissão <b>ads_management</b>. Ele fica só neste computador.</p>
+    <div class="linha">
+      <input type="password" id="token" placeholder="EAAB..." autocomplete="off">
+      <button class="botao" id="btnToken">Salvar token</button>
+    </div>
+    <label class="mini" style="display:flex;gap:6px;align-items:center;margin-top:10px">
+      <input type="checkbox" id="salvarToken" checked> Lembrar neste computador (salva no arquivo .env)
+    </label>
+    <div class="alerta erro" id="erroToken" hidden></div>
+  </section>
+
+  <!-- 1. Conta -->
+  <section class="passo" id="secConta" hidden>
+    <h2><span class="num">1</span> Conta de anúncio</h2>
+    <p class="ajuda">Digite o ID da conta de anúncio do cliente. Está no Gerenciador de Anúncios, ao lado do nome da conta.</p>
+    <form class="linha" id="formConta">
+      <input type="text" id="conta" placeholder="Ex.: 123456789012345" inputmode="numeric" autocomplete="off">
+      <button class="botao" id="btnBuscar" type="submit">Buscar Instagram</button>
+    </form>
+    <div class="alerta erro" id="erroConta" hidden></div>
+  </section>
+
+  <!-- 2. Instagram -->
+  <section class="passo" id="secIg" hidden>
+    <h2><span class="num">2</span> Perfil do Instagram</h2>
+    <p class="ajuda" id="ajudaIg"></p>
+    <div class="contas" id="contas"></div>
+    <div class="alerta aviso" id="avisoIg" hidden>Há mais de um perfil ligado a essa conta. Já marcamos o de mais seguidores, que costuma ser o oficial. <b>Na dúvida, confirme com o time</b>: se o perfil estiver errado, os públicos ficam vazios.</div>
+  </section>
+
+  <!-- 3. Configuração -->
+  <section class="passo" id="secConfig" hidden>
+    <h2><span class="num">3</span> Ajustes (opcional)</h2>
+    <p class="ajuda">Já vem no padrão. Só mexa se o cliente pediu algo diferente.</p>
+    <div class="grade">
+      <div>
+        <label class="campo" for="idCliente">Código do cliente <span style="font-weight:400;color:var(--suave)">(2 ou 3 letras, opcional)</span></label>
+        <input type="text" id="idCliente" maxlength="3" placeholder="Ex.: ABC" style="max-width:160px;text-transform:uppercase">
+        <div class="mini">Entra no nome do público para identificar o cliente.</div>
+      </div>
+
+      <details id="detFormato">
+        <summary>Usar outro formato de nome</summary>
+        <div style="margin-top:10px">
+          <input type="text" id="formato" placeholder="Ex.: Cliente X | IG {TIPO} | {DIAS} dias">
+          <div class="mini">Use <b>{TIPO}</b> e <b>{DIAS}</b> (obrigatórios) e, se quiser, <b>{ID_CLIENT}</b>. Deixe vazio para usar o padrão.</div>
+        </div>
+      </details>
+
+      <div>
+        <label class="campo">Janelas de dias</label>
+        <div class="chips" id="janelas"></div>
+        <div class="add-janela" style="margin-top:8px">
+          <input type="number" id="novaJanela" min="1" max="730" placeholder="dias">
+          <button class="botao secundario" id="btnAddJanela" style="padding:6px 14px">+ adicionar</button>
+          <button class="link" id="btnPadrao" style="margin-left:6px">voltar ao padrão</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="campo">Tipos de público <span style="font-weight:400;color:var(--suave)">(sempre os 7)</span></label>
+        <div class="chips">
+          <span class="chip fixo">ENV · todos</span><span class="chip fixo">VISITOU</span><span class="chip fixo">MENSAGEM</span>
+          <span class="chip fixo">SALVOU</span><span class="chip fixo">ENGA · envolveram</span><span class="chip fixo">CTA-IG</span><span class="chip fixo">SwipeCar</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. Criar -->
+  <section class="passo" id="secCriar" hidden>
+    <h2><span class="num">4</span> Criar</h2>
+    <div id="resumo">
+      <div class="resumo-num" id="resumoNum">—</div>
+      <div class="ajuda" id="resumoTexto" style="margin:4px 0 0"></div>
+      <ul class="exemplos" id="exemplos"></ul>
+      <details style="margin-top:10px"><summary>Ver todos os nomes</summary><ul class="lista" id="todos"></ul></details>
+    </div>
+    <div class="alerta erro" id="erroPrevia" hidden></div>
+    <div style="margin-top:16px">
+      <button class="botao grande" id="btnCriar" disabled>Criar públicos</button>
+    </div>
+    <div class="confirmar" id="confirmar" hidden>
+      <p id="textoConfirmar"></p>
+      <div class="acoes" style="margin-top:0">
+        <button class="botao" id="btnConfirmar">Sim, criar agora</button>
+        <button class="botao secundario" id="btnVoltar">Voltar</button>
+      </div>
+    </div>
+    <div class="alerta erro" id="erroCriar" hidden></div>
+  </section>
+
+  <!-- Progresso / resultado -->
+  <section class="passo" id="secProgresso" hidden>
+    <h2 id="tituloProgresso">Criando públicos…</h2>
+    <p class="ajuda" id="subProgresso">Pode deixar a página aberta. Não feche a janela preta.</p>
+    <div class="barra"><div id="barra"></div></div>
+    <div class="placar">
+      <div><strong id="pFeitos">0</strong>de <span id="pTotal">0</span></div>
+      <div class="v"><strong id="pOk">0</strong>criados</div>
+      <div class="e"><strong id="pErro">0</strong>com erro</div>
+    </div>
+    <div class="alerta aviso" id="aguardando" hidden></div>
+    <ul class="lista" id="log"></ul>
+
+    <div id="fim" hidden>
+      <div class="alerta aviso" style="margin-top:16px">
+        <b>Lembrete:</b> daqui a alguns dias, confira no Gerenciador de Anúncios se o tamanho dos públicos não está zerado. Tamanho 0 é sinal de que o perfil do Instagram escolhido estava errado.
+      </div>
+      <div class="acoes">
+        <button class="botao" id="btnRepetir" hidden>Tentar de novo os que falharam</button>
+        <button class="botao secundario" id="btnRelatorios">Abrir pasta de relatórios</button>
+        <button class="botao secundario" id="btnNova">Criar para outra conta</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+const JANELAS_PADRAO = [3, 7, 14, 30, 60, 90, 180, 365, 540, 730];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (n) => (n == null ? "?" : Number(n).toLocaleString("pt-BR"));
+
+const estado = { conta: "", contas: [], igId: "", janelas: new Set(JANELAS_PADRAO), previa: null };
+
+async function api(caminho, corpo) {
+  const opcoes = corpo === undefined ? {} : {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-App": "publicos-ig" },
+    body: JSON.stringify(corpo),
+  };
+  let r;
+  try { r = await fetch(caminho, opcoes); }
+  catch { throw new Error("A interface perdeu a conexão. Verifique se a janela preta ainda está aberta."); }
+  const dados = await r.json().catch(() => ({}));
+  if (!r.ok || dados.erro) throw new Error(dados.erro || `Erro ${r.status}`);
+  return dados;
+}
+
+function mostrarErro(id, erro) {
+  const el = $(id);
+  el.textContent = erro ? erro.message || erro : "";
+  el.hidden = !erro;
+}
+
+function ocupado(botao, sim, textoOcupado) {
+  if (sim) { botao.dataset.texto = botao.textContent; botao.textContent = textoOcupado; }
+  else if (botao.dataset.texto) botao.textContent = botao.dataset.texto;
+  botao.disabled = sim;
+}
+
+/* ---------- Token ---------- */
+async function iniciar() {
+  const status = await api("/api/status");
+  $("secToken").hidden = status.token;
+  $("secConta").hidden = !status.token;
+  $("trocarToken").hidden = !status.token;
+  if (status.token) $("conta").focus(); else $("token").focus();
+
+  const prog = await api("/api/progresso");
+  if (prog.ativa) { $("secProgresso").hidden = false; acompanhar(); }
+}
+
+$("btnToken").onclick = async () => {
+  mostrarErro("erroToken", null);
+  ocupado($("btnToken"), true, "Salvando…");
+  try {
+    await api("/api/token", { token: $("token").value, salvar: $("salvarToken").checked });
+    $("token").value = "";
+    $("secToken").hidden = true;
+    $("secConta").hidden = false;
+    $("trocarToken").hidden = false;
+    $("conta").focus();
+  } catch (e) { mostrarErro("erroToken", e); }
+  ocupado($("btnToken"), false);
+};
+$("token").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnToken").click(); });
+$("trocarToken").onclick = () => { $("secToken").hidden = false; $("token").focus(); };
+
+/* ---------- 1. Buscar conta ---------- */
+$("formConta").onsubmit = async (e) => {
+  e.preventDefault();
+  mostrarErro("erroConta", null);
+  ["secIg", "secConfig", "secCriar"].forEach((id) => ($(id).hidden = true));
+  ocupado($("btnBuscar"), true, "Buscando…");
+  try {
+    const r = await api("/api/buscar", { conta: $("conta").value });
+    estado.conta = r.conta;
+    estado.contas = r.contas;
+    estado.igId = r.contas[0].id;
+    desenharContas();
+    ["secIg", "secConfig", "secCriar"].forEach((id) => ($(id).hidden = false));
+    atualizarPrevia();
+  } catch (err) { mostrarErro("erroConta", err); }
+  ocupado($("btnBuscar"), false);
+};
+
+/* ---------- 2. Instagram ---------- */
+function desenharContas() {
+  const varias = estado.contas.length > 1;
+  $("ajudaIg").textContent = varias
+    ? `Encontramos ${estado.contas.length} perfis ligados a essa conta. Marque o perfil oficial do cliente.`
+    : "Confira se este é o perfil do cliente.";
+  $("avisoIg").hidden = !varias;
+  $("contas").innerHTML = estado.contas.map((c, i) => {
+    const inicial = esc((c.username || "?")[0].toUpperCase());
+    const foto = c.profile_picture_url
+      ? `<img class="foto" src="${esc(c.profile_picture_url)}" alt="" onerror="this.outerHTML='<div class=foto>${inicial}</div>'">`
+      : `<div class="foto">${inicial}</div>`;
+    return `<label class="conta-ig">
+      <input type="radio" name="ig" value="${esc(c.id)}" ${c.id === estado.igId ? "checked" : ""}>
+      ${foto}
+      <div class="info">
+        <div class="user">@${esc(c.username)}${varias && i === 0 ? '<span class="selo">sugerido</span>' : ""}</div>
+        <div class="nums">${esc(c.name || "")} · ${fmt(c.followers_count)} seguidores · ${fmt(c.media_count)} posts</div>
+        ${c.biography ? `<div class="bio">${esc(c.biography)}</div>` : ""}
+      </div>
+    </label>`;
+  }).join("");
+  document.querySelectorAll("input[name=ig]").forEach((r) =>
+    r.addEventListener("change", () => { estado.igId = r.value; esconderConfirmacao(); }));
+}
+
+/* ---------- 3. Configuração ---------- */
+function desenharJanelas() {
+  const todas = [...new Set([...JANELAS_PADRAO, ...estado.janelas])].sort((a, b) => a - b);
+  $("janelas").innerHTML = todas.map((d) =>
+    `<button class="chip" data-dias="${d}" aria-pressed="${estado.janelas.has(d)}">${d} dias</button>`).join("");
+}
+$("janelas").onclick = (e) => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  const d = Number(chip.dataset.dias);
+  estado.janelas.has(d) ? estado.janelas.delete(d) : estado.janelas.add(d);
+  desenharJanelas();
+  atualizarPrevia();
+};
+$("btnAddJanela").onclick = () => {
+  const d = parseInt($("novaJanela").value, 10);
+  if (!(d >= 1 && d <= 730)) { $("novaJanela").focus(); return; }
+  estado.janelas.add(d);
+  $("novaJanela").value = "";
+  desenharJanelas();
+  atualizarPrevia();
+};
+$("novaJanela").addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnAddJanela").click(); });
+$("btnPadrao").onclick = () => { estado.janelas = new Set(JANELAS_PADRAO); desenharJanelas(); atualizarPrevia(); };
+$("idCliente").addEventListener("input", () => { $("idCliente").value = $("idCliente").value.replace(/[^a-zA-Z]/g, "").toUpperCase(); atualizarPrevia(); });
+$("formato").addEventListener("input", atualizarPrevia);
+
+function configuracao() {
+  return {
+    conta: estado.conta,
+    ig_id: estado.igId,
+    id_cliente: $("idCliente").value,
+    formato: $("detFormato").open ? $("formato").value : "",
+    janelas: [...estado.janelas],
+  };
+}
+$("detFormato").addEventListener("toggle", atualizarPrevia);
+
+/* ---------- 4. Prévia e criação ---------- */
+let temporizador, versaoPrevia = 0;
+function atualizarPrevia() {
+  esconderConfirmacao();
+  $("btnCriar").disabled = true;
+  clearTimeout(temporizador);
+  temporizador = setTimeout(async () => {
+    const minhaVersao = ++versaoPrevia;
+    try {
+      const p = await api("/api/previa", configuracao());
+      if (minhaVersao !== versaoPrevia) return;
+      estado.previa = p;
+      mostrarErro("erroPrevia", null);
+      desenharPrevia(p);
+    } catch (e) {
+      if (minhaVersao !== versaoPrevia) return;
+      estado.previa = null;
+      mostrarErro("erroPrevia", e);
+      $("resumoNum").textContent = "—";
+      $("resumoTexto").textContent = "";
+      $("exemplos").innerHTML = $("todos").innerHTML = "";
+      $("btnCriar").textContent = "Criar públicos";
+    }
+  }, 300);
+}
+
+function desenharPrevia(p) {
+  $("resumoNum").textContent = `${p.novos} ${p.novos === 1 ? "público" : "públicos"}`;
+  $("resumoTexto").textContent = p.novos
+    ? `serão criados (7 tipos × ${estado.janelas.size} janelas)` + (p.existentes ? ` · ${p.existentes} já existem e serão pulados` : "")
+    : "Todos esses públicos já existem nessa conta. Nada a criar.";
+  const novos = p.publicos.filter((x) => !x.existe);
+  $("exemplos").innerHTML = novos.slice(0, 3).map((x) => `<li>${esc(x.nome)}</li>`).join("")
+    + (novos.length > 3 ? `<li style="color:var(--suave)">… e mais ${novos.length - 3}</li>` : "");
+  $("todos").innerHTML = p.publicos.map((x) => x.existe
+    ? `<li><span class="existe">${esc(x.nome)}</span><span class="tag cinza">já existe</span></li>`
+    : `<li><span>${esc(x.nome)}</span></li>`).join("");
+  $("btnCriar").textContent = p.novos ? `Criar ${p.novos} públicos` : "Nada a criar";
+  $("btnCriar").disabled = !p.novos;
+}
+
+function esconderConfirmacao() { $("confirmar").hidden = true; mostrarErro("erroCriar", null); }
+
+$("btnCriar").onclick = () => {
+  const ig = estado.contas.find((c) => c.id === estado.igId);
+  $("textoConfirmar").innerHTML =
+    `Vou criar <b>${estado.previa.novos} públicos</b> na conta <b>act_${esc(estado.conta)}</b> usando o Instagram <b>@${esc(ig?.username)}</b>. Confirma?`;
+  $("confirmar").hidden = false;
+  $("btnConfirmar").focus();
+};
+$("btnVoltar").onclick = esconderConfirmacao;
+
+$("btnConfirmar").onclick = async () => {
+  mostrarErro("erroCriar", null);
+  ocupado($("btnConfirmar"), true, "Iniciando…");
+  try {
+    await api("/api/criar", configuracao());
+    $("confirmar").hidden = true;
+    travarFormulario(true);
+    $("secProgresso").hidden = false;
+    $("secProgresso").scrollIntoView({ behavior: "smooth" });
+    acompanhar();
+  } catch (e) { mostrarErro("erroCriar", e); }
+  ocupado($("btnConfirmar"), false);
+};
+
+function travarFormulario(sim) {
+  document.querySelectorAll("#secConta input, #secConta button, #secIg input, #secConfig input, #secConfig button, #btnCriar")
+    .forEach((el) => (el.disabled = sim));
+}
+
+/* ---------- Progresso ---------- */
+function acompanhar() {
+  $("fim").hidden = true;
+  $("tituloProgresso").textContent = "Criando públicos…";
+  $("subProgresso").textContent = "Pode deixar a página aberta. Não feche a janela preta.";
+  const passo = async () => {
+    let t;
+    try { t = await api("/api/progresso"); }
+    catch { setTimeout(passo, 2000); return; }
+    $("pFeitos").textContent = t.feitos ?? 0;
+    $("pTotal").textContent = t.total ?? 0;
+    $("pOk").textContent = t.sucesso ?? 0;
+    $("pErro").textContent = t.erros ?? 0;
+    $("barra").style.width = t.total ? `${(100 * t.feitos) / t.total}%` : "0";
+    $("aguardando").hidden = !t.aguardando;
+    $("aguardando").textContent = `A Meta pediu uma pausa por excesso de chamadas. Esperando ${t.aguardando}s e continuando sozinho…`;
+    $("log").innerHTML = (t.itens || []).slice().reverse().map((x) => x.ok
+      ? `<li><span>${esc(x.nome)}</span><span class="tag verde">criado</span></li>`
+      : `<li class="com-erro"><span style="display:flex;justify-content:space-between;gap:10px"><span>${esc(x.nome)}</span><span class="tag vermelha">erro</span></span><span class="erro-item">${esc(x.erro)}</span></li>`).join("");
+    if (t.ativa) { setTimeout(passo, 700); return; }
+    finalizar(t);
+  };
+  passo();
+}
+
+function finalizar(t) {
+  travarFormulario(false);
+  $("fim").hidden = false;
+  $("btnRepetir").hidden = !t.erros;
+  if (!t.erros) {
+    $("tituloProgresso").textContent = `Pronto! ${t.sucesso} públicos criados ✓`;
+    $("subProgresso").textContent = `Conta act_${t.conta} · Instagram @${t.ig}`;
+  } else {
+    $("tituloProgresso").textContent = `Terminou com ${t.erros} ${t.erros === 1 ? "erro" : "erros"}`;
+    $("subProgresso").textContent = `${t.sucesso} criados. Veja os erros abaixo. Ao tentar de novo, os que já foram criados são pulados.`;
+  }
+  if (!$("secCriar").hidden) atualizarPrevia();
+}
+
+$("btnRepetir").onclick = () => {
+  $("secCriar").scrollIntoView({ behavior: "smooth" });
+  atualizarPrevia();
+};
+$("btnRelatorios").onclick = () => api("/api/abrir-relatorios", {}).catch((e) => alert(e.message));
+$("btnNova").onclick = () => {
+  ["secIg", "secConfig", "secCriar", "secProgresso"].forEach((id) => ($(id).hidden = true));
+  $("conta").value = "";
+  $("idCliente").value = "";
+  $("formato").value = "";
+  $("detFormato").open = false;
+  estado.janelas = new Set(JANELAS_PADRAO);
+  desenharJanelas();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  $("conta").focus();
+};
+
+desenharJanelas();
+iniciar().catch((e) => {
+  document.querySelector("main").insertAdjacentHTML("beforeend",
+    `<div class="alerta erro">${esc(e.message)}</div>`);
+});
+</script>
+</body>
+</html>

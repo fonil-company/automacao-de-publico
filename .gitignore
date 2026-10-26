@@ -1,0 +1,10 @@
+# Token de acesso — nunca subir
+.env
+
+# Relatórios com dados dos clientes
+relatorios/
+
+__pycache__/
+*.pyc
+.claude/
+.DS_Store
